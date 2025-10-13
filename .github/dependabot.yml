@@ -7,10 +7,8 @@ updates:
           time: "12:00"
           timezone: "Asia/Shanghai"
       commit-message:
-          prefix: "CI"
+          prefix: "CI - "
           include: "scope"
-      labels:
-          - "github-actions"
       groups:
           # Group all GitHub Actions in one PR.
           github-actions:

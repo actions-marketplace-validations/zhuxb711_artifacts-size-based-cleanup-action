@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/sh
 npm i -g @vercel/ncc
 yarn install --immutable && yarn build
 git add dist/*.js
