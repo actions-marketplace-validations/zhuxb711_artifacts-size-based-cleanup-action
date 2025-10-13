@@ -1,0 +1,18 @@
+version: 2
+updates:
+    - package-ecosystem: "github-actions"
+      directory: "/"
+      schedule:
+          interval: "daily"
+          time: "12:00"
+          timezone: "Asia/Shanghai"
+      commit-message:
+          prefix: "CI"
+          include: "scope"
+      labels:
+          - "github-actions"
+      groups:
+          # Group all GitHub Actions in one PR.
+          github-actions:
+              patterns:
+                  - "*"
