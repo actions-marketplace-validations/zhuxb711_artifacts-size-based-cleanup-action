@@ -90,6 +90,14 @@ See also [action.yml](https://github.com/zhuxb711/artifacts-size-based-cleanup-a
     fixedReservedSize: 512MB # Will delete the artifacts until this size satisfied. Which means all the artifacts remain will less than (1GB - 512MB = 512MB)
 ```
 
+### Example that cleanup all the artifacts
+```yml
+- name: Run cleanup action
+  uses: zhuxb711/artifacts-size-based-cleanup-action@v1
+  with:
+    limit: 0KB
+```
+
 ### Complete example
 
 ```yml

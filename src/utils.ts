@@ -15,7 +15,7 @@ export class Utils {
       .catch(() => false);
   }
 
-  static async createZipFile(sourcePath: string, destinationPath: string, compressionLevel: number): Promise<void> {
+  static async createZipFile(sourcePath: string, destinationPath: string, compressionLevel: number): Promise<string> {
     const config_zip_buffer = process.env.CLEANUP_OPTION_ZIP_BUFFER;
     const allowedZipBuffer = _.isEmpty(config_zip_buffer) ? 8 * 1024 * 1024 : Number(config_zip_buffer);
 
@@ -73,5 +73,7 @@ export class Utils {
 
     await zipArchiver.finalize();
     await streamPromise.finished(zipStream);
+
+    return destinationPath;
   }
 }

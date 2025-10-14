@@ -5,7 +5,7 @@
   "main": "src/index.ts",
   "packageManager": "yarn@4.10.3",
   "scripts": {
-    "start": "node dist/index.js",
+    "start": "ncc build && node dist/index.js",
     "build": "ncc build",
     "watch": "ncc build -w",
     "postinstall": "husky"

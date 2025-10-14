@@ -10,13 +10,13 @@ inputs:
     required: false
     default: ${{ github.token }}
   limit:
-    description: The maximum size of the artifacts in bytes for current repository. Action will make sure the all artifacts size is less than this limit and reserve enough space for new artifacts. Allowed values includes - [1024, 256KB, 512MB, 1.5GB].
+    description: The maximum size of the artifacts in bytes for current repository. Action will make sure the all artifacts size is less than this limit and reserve enough space for new artifacts. Allowed values includes - [1024, 256KB, 512MB, 1.5GB]. If this value is less than or equal to zero, the action will clean up all artifacts.
     required: true
   fixedReservedSize:
-    description: Optional. Use a fixed size to reserve the space. If not provided, will use the value of 'artifactPaths' to calculate the size of the artifacts to be uploaded automatically. Allowed values includes - [1024, 256KB, 512MB, 1.5GB]. An exception will be thrown if both 'fixedReservedSize' and 'artifactPaths' are not provided.
+    description: Optional. Use a fixed size to reserve the space. If not provided, will use the value of 'artifactPaths' to calculate the size of the artifacts to be uploaded automatically. Allowed values includes - [1024, 256KB, 512MB, 1.5GB]. An exception will be thrown if both 'fixedReservedSize' and 'artifactPaths' are not provided unless 'limit' is less than or equal to zero.
     required: false
   artifactPaths:
-    description: Optional. The paths of the artifacts to be uploaded, will calculate the size automatically. If not provided, will use the value of 'fixedReservedSize'. An exception will be thrown if both 'fixedReservedSize' and 'artifactPaths' are not provided.
+    description: Optional. The paths of the artifacts to be uploaded, will calculate the size automatically. If not provided, will use the value of 'fixedReservedSize'. An exception will be thrown if both 'fixedReservedSize' and 'artifactPaths' are not provided unless 'limit' is less than or equal to zero.
     required: false
   simulateCompressionLevel:
     description: Optional. The compression level of the artifacts to be uploaded. Should be the same value as you specific in the upload artifacts action. Will use this value to simulate the compression and calculate the actual size of the artifact after compression. If not provided, will use the default value of 6.

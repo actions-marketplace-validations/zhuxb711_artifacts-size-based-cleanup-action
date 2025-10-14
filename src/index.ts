@@ -10,7 +10,7 @@ import * as fsPromise from 'fs/promises';
 
 const main = async () => {
   const token = core.getInput('token');
-  
+
   const limit = bytes.parse(core.getInput('limit'));
   const removeDirection = core.getInput('removeDirection');
   const fixedReservedSize = bytes.parse(core.getInput('fixedReservedSize'));
@@ -18,33 +18,25 @@ const main = async () => {
   const artifactPaths = core.getMultilineInput('artifactPaths');
   const [ownerName, repoName] = process.env.GITHUB_REPOSITORY.split('/').map((part) => part.trim());
 
-  if (Number.isNaN(limit) || limit < 0) {
-    throw new Error('Invalid limit, must be a positive number');
-  }
-
   if (_.isEmpty(token)) {
     throw new Error('Missing Github access token. Please provide a token input or ensure GITHUB_TOKEN is available.');
   }
 
-  if (_.isEmpty(artifactPaths) && (Number.isNaN(fixedReservedSize) || fixedReservedSize <= 0)) {
-    throw new Error('Either fixedReservedSize or artifactPaths must be provided');
+  if (limit > 0) {
+    if (_.isEmpty(artifactPaths) && (Number.isNaN(fixedReservedSize) || fixedReservedSize < 0)) {
+      throw new Error('Either fixedReservedSize or artifactPaths must be provided');
+    }
   }
 
   if (!_.includes(['newest', 'oldest'], removeDirection)) {
     throw new Error(`Invalid removeDirection, must be either 'newest' or 'oldest'`);
   }
 
-  if (Number.isNaN(simulateCompressionLevel) || simulateCompressionLevel < 0 || simulateCompressionLevel > 9) {
-    throw new Error(`Invalid uploadCompressionLevel, must be a number between 0 and 9`);
+  if (!_.isEmpty(artifactPaths)) {
+    if (Number.isNaN(simulateCompressionLevel) || simulateCompressionLevel < 0 || simulateCompressionLevel > 9) {
+      throw new Error(`Invalid uploadCompressionLevel, must be a number between 0 and 9`);
+    }
   }
-
-  const validPaths = await Promise.all(
-    artifactPaths.map((path) => Utils.checkPathExists(path).then((result) => (result ? path : undefined)))
-  ).then((paths) => paths.filter((path) => !_.isEmpty(path)));
-
-  _.differenceWith(artifactPaths, validPaths, (a, b) => a.localeCompare(b) == 0).forEach((path) =>
-    core.warning(`Path does not exists and will be ignored: '${path}'`)
-  );
 
   const retry = (await import('@octokit/plugin-retry')).retry;
   const throttling = (await import('@octokit/plugin-throttling')).throttling;
@@ -180,44 +172,77 @@ const main = async () => {
       .join(', ')}`
   );
 
-  const simulateAndGetCompressedSize = async (path: string, compressionLevel: number) => {
-    const zipPath = __dirname + `/size_simulate_${uuidv4()}.zip`;
-    await Utils.createZipFile(path, zipPath, compressionLevel);
-    return await fsPromise.stat(zipPath).then((stat) => stat.size);
-  };
+  const deletedArtifacts = new Array<{
+    id: number;
+    name: string;
+    size: number;
+    runId: number;
+    workflowId: number;
+  }>();
 
-  const pendingArtifactsTotalSize =
-    fixedReservedSize > 0
-      ? fixedReservedSize
-      : _.sum(
-          await Promise.all(validPaths.map((path) => simulateAndGetCompressedSize(path, simulateCompressionLevel)))
-        );
-  const existingArtifactsTotalSize = _.sumBy(artifacts, (artifact) => artifact.size);
+  if (limit > 0) {
+    const retrievePendingSize = async () => {
+      if (fixedReservedSize > 0) {
+        return fixedReservedSize;
+      }
 
-  if (pendingArtifactsTotalSize > limit) {
-    throw new Error(`Total size of artifacts to upload exceeds the limit: ${bytes.format(pendingArtifactsTotalSize)}`);
-  }
+      const validPaths = new Array<string>();
+      const simulateAndGetCompressedSize = async (path: string, compressionLevel: number) => {
+        const zipPath = __dirname + `/size_simulate_${uuidv4()}.zip`;
 
-  core.info(`Total size that need to be reserved: ${bytes.format(pendingArtifactsTotalSize)}`);
-  core.info(`Total size of all existing artifacts: ${bytes.format(existingArtifactsTotalSize)}`);
+        try {
+          return await fsPromise
+            .stat(await Utils.createZipFile(path, zipPath, compressionLevel))
+            .then((stats) => stats.size);
+        } finally {
+          await fsPromise.unlink(zipPath).catch(() => {
+            core.warning(`Failed to delete simulated zip file: '${zipPath}'`);
+          });
+        }
+      };
 
-  if (pendingArtifactsTotalSize + existingArtifactsTotalSize > limit) {
-    const freeSpaceNeeded = pendingArtifactsTotalSize + existingArtifactsTotalSize - limit;
+      for (const path of artifactPaths) {
+        core.info(`Checking artifact path existence: '${path}'`);
+
+        if (await Utils.checkPathExists(path)) {
+          validPaths.push(path);
+          continue;
+        }
+
+        core.warning(`Path does not exists and will be ignored: '${path}'`);
+      }
+
+      return _.sum(
+        await Promise.all(validPaths.map((path) => simulateAndGetCompressedSize(path, simulateCompressionLevel)))
+      );
+    };
+
+    const pendingSize = await retrievePendingSize();
+    const existingArtifactsTotalSize = _.sumBy(artifacts, (artifact) => artifact.size);
+
+    if (pendingSize > limit) {
+      throw new Error(
+        `Total size of artifacts to upload exceeds the limit: ${bytes.format(pendingSize)}`
+      );
+    }
+
+    core.info(`Total size that need to be reserved: ${bytes.format(pendingSize)}`);
+    core.info(`Total size of all existing artifacts: ${bytes.format(existingArtifactsTotalSize)}`);
+
+    const freeSpaceNeeded = pendingSize + existingArtifactsTotalSize - limit;
+
+    if (freeSpaceNeeded <= 0) {
+      core.info(`No cleanup required, available space: ${bytes.format(limit - existingArtifactsTotalSize)}`);
+      return;
+    }
+
+    core.info(`Preparing to delete artifacts, require minimum space: ${bytes.format(freeSpaceNeeded)}`);
+
     const sortedByDateArtifacts = artifacts.sort((a, b) =>
       removeDirection === 'oldest'
         ? (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0)
         : (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0)
     );
-
-    core.info(`Preparing to delete artifacts, require minimum space: ${bytes.format(freeSpaceNeeded)}`);
-
-    const deletedArtifacts = new Array<{
-      id: number;
-      name: string;
-      size: number;
-      runId: number;
-      workflowId: number;
-    }>();
 
     for (let index = 0, deletedSize = 0; index < sortedByDateArtifacts.length; index++) {
       const { name, size, id, runId, workflowId } = sortedByDateArtifacts[index];
@@ -259,29 +284,61 @@ const main = async () => {
         break;
       }
     }
-
-    core.info(
-      `Summary: free up space after cleanup: ${bytes.format(_.sumBy(deletedArtifacts, (artifact) => artifact.size))}`
-    );
-
-    Object.entries(_.groupBy(deletedArtifacts, (artifact) => artifact.runId)).forEach(([runId, artifact]) => {
-      core.info(
-        `Summary: ${artifact.length} artifacts deleted from workflow run 'RunId_${runId}-RunName_${allWorkflowRuns
-          .find((run) => run.runId === Number(runId))
-          ?.runName.replaceAll(/\s+/g, '.')}': [${artifact
-          .map(
-            (art) =>
-              `'WorkflowId_${art.workflowId}-RunId_${art.runId}-ArtifactId_${art.id}-ArtifactName_${art.name.replaceAll(
-                /\s+/g,
-                '.'
-              )}'`
-          )
-          .join(', ')}]`
-      );
-    });
   } else {
-    core.info(`No cleanup required, available space: ${bytes.format(limit - existingArtifactsTotalSize)}`);
+    core.info(`Limit is less or equal to 0, start cleanup all existing artifacts`);
+
+    for (const { name, size, id, runId, workflowId } of artifacts) {
+      if (!_.isEmpty(name)) {
+        deletedArtifacts.push({
+          id: id,
+          name: name,
+          size: size,
+          runId: runId,
+          workflowId: workflowId
+        });
+
+        try {
+          await client.deleteArtifact(name, {
+            findBy: {
+              token: token,
+              workflowRunId: runId,
+              repositoryName: repoName,
+              repositoryOwner: ownerName
+            }
+          });
+        } catch (error) {
+          if (error instanceof ArtifactNotFoundError) {
+            core.warning(
+              `Failed to delete artifact '${name}' within RunId '${runId}' because artifact is not found and maybe expired.`
+            );
+            continue;
+          }
+
+          throw error;
+        }
+      }
+    }
   }
+
+  core.info(
+    `Summary: free up space after cleanup: ${bytes.format(_.sumBy(deletedArtifacts, (artifact) => artifact.size))}`
+  );
+
+  Object.entries(_.groupBy(deletedArtifacts, (artifact) => artifact.runId)).forEach(([runId, artifact]) => {
+    core.info(
+      `Summary: ${artifact.length} artifacts deleted from workflow run 'RunId_${runId}-RunName_${allWorkflowRuns
+        .find((run) => run.runId === Number(runId))
+        ?.runName.replaceAll(/\s+/g, '.')}': [${artifact
+        .map(
+          (art) =>
+            `'WorkflowId_${art.workflowId}-RunId_${art.runId}-ArtifactId_${art.id}-ArtifactName_${art.name.replaceAll(
+              /\s+/g,
+              '.'
+            )}'`
+        )
+        .join(', ')}]`
+    );
+  });
 };
 
 main()

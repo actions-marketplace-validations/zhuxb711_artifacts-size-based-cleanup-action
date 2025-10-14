@@ -9,6 +9,9 @@ on:
 jobs:
   CITest:
     runs-on: windows-latest
+    permissions:
+      actions: write
+      contents: read
     env:
       Env_TestFilePath1: ${{github.workspace}}\TestFile1.txt
       Env_TestFilePath2: ${{github.workspace}}\TestFile2.txt
@@ -25,9 +28,7 @@ jobs:
       - name: Cleanup all artifacts
         uses: ./
         with:
-          token: ${{secrets.ACCESS_TOKEN}}
-          limit: 1MB
-          fixedReservedSize: 1MB
+          limit: 0KB
           failOnError: true
 
       - name: Create test artifact
@@ -69,7 +70,6 @@ jobs:
       - name: Run cleanup action test 1
         uses: ./
         with:
-          token: ${{secrets.ACCESS_TOKEN}}
           limit: 3MB
           fixedReservedSize: 1MB
           failOnError: true
@@ -87,7 +87,6 @@ jobs:
       - name: Run cleanup action test 2
         uses: ./
         with:
-          token: ${{secrets.ACCESS_TOKEN}}
           limit: 4MB
           failOnError: true
           removeDirection: oldest
@@ -124,7 +123,6 @@ jobs:
       - name: Run cleanup action test 3
         uses: ./
         with:
-          token: ${{secrets.ACCESS_TOKEN}}
           limit: 5MB
           failOnError: true
           removeDirection: oldest
@@ -145,7 +143,6 @@ jobs:
       - name: Run cleanup action test 4
         uses: ./
         with:
-          token: ${{secrets.ACCESS_TOKEN}}
           limit: 8MB
           failOnError: true
           removeDirection: oldest
@@ -167,7 +164,6 @@ jobs:
       - name: Run cleanup action test 5
         uses: ./
         with:
-          token: ${{secrets.ACCESS_TOKEN}}
           limit: 3MB
           fixedReservedSize: 512KB
           failOnError: true
