@@ -1,6 +1,7 @@
 import path from 'path';
 import bytes from 'bytes';
 import _ from 'lodash';
+import { glob } from 'glob';
 import * as fs from 'fs';
 import * as fsPromise from 'fs/promises';
 import * as archiver from 'archiver';
@@ -13,6 +14,20 @@ export class Utils {
       .access(path, fs.constants.F_OK)
       .then(() => true)
       .catch(() => false);
+  }
+
+  static async expandPaths(paths: string[]): Promise<string[]> {
+    const expandedPaths = new Array<string>();
+
+    for (const inputPath of paths) {
+      if (Utils.isGlobPattern(inputPath)) {
+        expandedPaths.push(...(await Utils.resolveGlobPaths(inputPath)));
+      } else {
+        expandedPaths.push(inputPath);
+      }
+    }
+
+    return _.uniqBy(expandedPaths, (path) => path.toLowerCase());
   }
 
   static async createZipFile(sourcePath: string, destinationPath: string, compressionLevel: number): Promise<string> {
@@ -75,5 +90,20 @@ export class Utils {
     await streamPromise.finished(zipStream);
 
     return destinationPath;
+  }
+
+  private static isGlobPattern(path: string): boolean {
+    return /[*?[\]{}]/.test(path);
+  }
+
+  private static async resolveGlobPaths(pattern: string): Promise<string[]> {
+    return await glob(pattern, {
+      dot: false,
+      follow: true,
+      absolute: true
+    }).catch((error) => {
+      core.warning(`Glob pattern '${pattern}' failed with error: ${error.message}`);
+      return [];
+    });
   }
 }

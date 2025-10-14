@@ -201,7 +201,7 @@ const main = async () => {
         }
       };
 
-      for (const path of artifactPaths) {
+      for (const path of await Utils.expandPaths(artifactPaths)) {
         core.info(`Checking artifact path existence: '${path}'`);
 
         if (await Utils.checkPathExists(path)) {
