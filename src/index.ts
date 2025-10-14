@@ -10,6 +10,7 @@ import * as fsPromise from 'fs/promises';
 
 const main = async () => {
   const token = core.getInput('token');
+  
   const limit = bytes.parse(core.getInput('limit'));
   const removeDirection = core.getInput('removeDirection');
   const fixedReservedSize = bytes.parse(core.getInput('fixedReservedSize'));
@@ -22,7 +23,7 @@ const main = async () => {
   }
 
   if (_.isEmpty(token)) {
-    throw new Error('Missing Github access token');
+    throw new Error('Missing Github access token. Please provide a token input or ensure GITHUB_TOKEN is available.');
   }
 
   if (_.isEmpty(artifactPaths) && (Number.isNaN(fixedReservedSize) || fixedReservedSize <= 0)) {

@@ -17,28 +17,61 @@ This action helps you cleanup the oldest/newest artifacts when space is not enou
 
 #### **_Make sure you run this cleanup action before upload the artifacts_**
 
+## Authentication
+
+### Default GITHUB_TOKEN
+If you don't provide the `token` input, this action will automatically use the default `GITHUB_TOKEN` that GitHub Actions provides for each workflow run.
+
+### Custom Token
+You can provide a custom GitHub token if you need additional permissions or want to use a different token:
+
+```yml
+with:
+  token: ${{ secrets.MY_CUSTOM_TOKEN }} # Should use your Personal Access Token. Token must be granted access permission with 'workflow' scope
+```
+
+However, if you do not provide the token, and want to use the `GITHUB_TOKEN` in the workflow context by default. The write access to 'action' must be grant for your `GITHUB_TOKEN`.
+
+```yml
+jobs:
+  YourJobName:
+    permissions:
+      actions: write # Must have this permission
+      contents: read # Optional. But you would need this to check out the code which is necessary in most case
+```
+
 ## Usage
 
 See also [action.yml](https://github.com/zhuxb711/artifacts-size-based-cleanup-action/blob/main/action.yml)
 
-### Simple example
+### Example
 
 ```yml
 - name: Run cleanup action
   uses: zhuxb711/artifacts-size-based-cleanup-action@v1
   with:
-    token: '<Your Github token>'
+    token: ${{ secrets.MY_CUSTOM_TOKEN }} # Optional: Will use GITHUB_TOKEN if not provided
     limit: 1GB
     artifactPaths: <Your path to the files or directories that pending uploads>
 ```
 
-### Specify multiple artifactPaths
+### Example without explicit token (uses default GITHUB_TOKEN)
 
 ```yml
 - name: Run cleanup action
   uses: zhuxb711/artifacts-size-based-cleanup-action@v1
   with:
-    token: '<Your Github token>'
+    limit: 1GB
+    artifactPaths: <Your path to the files or directories that pending uploads>
+```
+
+### Example with multiple artifact paths
+
+```yml
+- name: Run cleanup action
+  uses: zhuxb711/artifacts-size-based-cleanup-action@v1
+  with:
+    token: ${{ secrets.MY_CUSTOM_TOKEN }} # Optional: Will use default GITHUB_TOKEN if not provided
     limit: 1GB
     artifactPaths: |
       <Path 1>
@@ -46,15 +79,15 @@ See also [action.yml](https://github.com/zhuxb711/artifacts-size-based-cleanup-a
       <Path 3>
 ```
 
-### Specify a fixed size that need to be reserved
+### Example with a fixed size that need to be reserved
 
 ```yml
 - name: Run cleanup action
   uses: zhuxb711/artifacts-size-based-cleanup-action@v1
   with:
-    token: '<Your Github token>'
+    token: ${{ secrets.MY_CUSTOM_TOKEN }} # Optional: Will use default GITHUB_TOKEN if not provided
     limit: 1GB
-    fixedReservedSize: 512MB
+    fixedReservedSize: 512MB # Will delete the artifacts until this size satisfied. Which means all the artifacts remain will less than (1GB - 512MB = 512MB)
 ```
 
 ### Complete example
@@ -63,11 +96,11 @@ See also [action.yml](https://github.com/zhuxb711/artifacts-size-based-cleanup-a
 - name: Run cleanup action
   uses: zhuxb711/artifacts-size-based-cleanup-action@v1
   with:
-    token: '<Your Github token>' # Token must be granted access permission with 'workflow' scope.
+    token: ${{ secrets.GITHUB_TOKEN }} # Optional: Token must be granted access permission with 'workflow' scope. Will use default GITHUB_TOKEN if not provided.
     limit: 1GB # Could also set to 1024MB/512KB/2.5GB or size in bytes.
     fixedReservedSize: 512MB # Optional. Fixed size you want to reserved for the new artifacts. Must set 'artifactPaths' or 'fixedReservedSize'.
     failOnError: true # Optional. Reports failure if meet any exception.
     removeDirection: oldest # Optional. Remove the oldest artifact first or the newest one first.
-    simulateCompressionLevel: 9 # Optional. Should be the same value as you specific in the upload artifacts action.
+    simulateCompressionLevel: 9 # Optional. Only works if artifactPaths used. Should be the same value as you specific in the upload artifacts action. This parameter is used to calculate the actual artifact size that would be uploaded.
     artifactPaths: <Your path to the files that pending uploads> # Optional. Must set 'artifactPaths' or 'fixedReservedSize'.
 ```

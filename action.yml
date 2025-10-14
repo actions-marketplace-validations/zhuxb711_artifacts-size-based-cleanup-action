@@ -6,8 +6,9 @@ branding:
   color: 'yellow'
 inputs:
   token:
-    description: The GitHub token used to access the repository. Must be granted access permission with 'workflow' scope.
-    required: true
+    description: The GitHub token used to access the repository. Must grant the token access permission with 'workflow' scope or grant write access to 'action' permission on the GITHUB_TOKEN in the job level. If not provided, will use the default GITHUB_TOKEN.
+    required: false
+    default: ${{ github.token }}
   limit:
     description: The maximum size of the artifacts in bytes for current repository. Action will make sure the all artifacts size is less than this limit and reserve enough space for new artifacts. Allowed values includes - [1024, 256KB, 512MB, 1.5GB].
     required: true

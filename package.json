@@ -1,7 +1,7 @@
 {
   "name": "artifacts-size-based-cleanup-action",
   "description": "Cleanup artifacts base on the size limit to make sure the storage space is not exhausted",
-  "version": "1.1.7",
+  "version": "1.2.0",
   "main": "src/index.ts",
   "packageManager": "yarn@4.10.3",
   "scripts": {
@@ -25,21 +25,21 @@
   "dependencies": {
     "@actions/artifact": "^2.3.2",
     "@actions/core": "^1.11.1",
-    "@octokit/plugin-retry": "^7.2.0",
-    "@octokit/plugin-throttling": "^9.6.0",
+    "@octokit/plugin-retry": "^8.0.2",
+    "@octokit/plugin-throttling": "^11.0.2",
     "archiver": "^7.0.1",
     "bytes": "^3.1.2",
     "lodash": "^4.17.21",
     "pretty-error": "^4.0.0",
-    "uuid": "^11.1.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/archiver": "^6.0.3",
     "@types/bytes": "^3.1.5",
-    "@types/lodash": "^4.17.16",
-    "@types/node": "^22.13.14",
-    "@types/uuid": "^10.0.0",
+    "@types/lodash": "^4.17.20",
+    "@types/node": "^24.7.2",
+    "@types/uuid": "^11.0.0",
     "husky": "^9.1.7",
-    "typescript": "^5.8.2"
+    "typescript": "^5.9.3"
   }
 }
