@@ -1,6 +1,9 @@
 import { Utils } from './utils';
+import { Artifact } from './types';
 import { v4 as uuidv4 } from 'uuid';
-import { Artifact, ArtifactNotFoundError, DefaultArtifactClient, ListArtifactsResponse } from '@actions/artifact';
+import { retry } from '@octokit/plugin-retry';
+import { throttling } from '@octokit/plugin-throttling';
+import artifact, { ArtifactNotFoundError } from '@actions/artifact';
 import bytes from 'bytes';
 import PrettyError from 'pretty-error';
 import _ from 'lodash';
@@ -38,8 +41,6 @@ const main = async () => {
     }
   }
 
-  const retry = (await import('@octokit/plugin-retry')).retry;
-  const throttling = (await import('@octokit/plugin-throttling')).throttling;
   const config_retries_enable = process.env.CLEANUP_OPTION_ENABLE_OCTOKIT_RETRIES;
   const config_max_allowed_retries = process.env.CLEANUP_OPTION_MAX_ALLOWED_RETRIES;
   const enableOctokitRetries = _.isEmpty(config_retries_enable) || config_retries_enable === 'true';
@@ -75,15 +76,6 @@ const main = async () => {
           core.warning(`Retrying after ${retryAfter} seconds`);
 
           return enableOctokitRetries;
-        },
-        onAbuseLimit: (retryAfter, options) => {
-          core.warning(
-            `Abuse detected for request ${options.method} ${options.url}, retry count: ${options.request.retryCount}`
-          );
-
-          core.warning(`Retrying after ${retryAfter} seconds`);
-
-          return enableOctokitRetries;
         }
       }
     },
@@ -91,94 +83,37 @@ const main = async () => {
     throttling
   );
 
-  core.info(`Querying all workflow runs for repository: '${ownerName}/${repoName}'`);
+  core.info(`Querying all artifacts for repository: '${ownerName}/${repoName}'`);
 
   const config_paginate_size = process.env.CLEANUP_OPTION_PAGINATE_SIZE;
-  const apiCallPagniateSize = _.isEmpty(config_paginate_size) ? 50 : Number(config_paginate_size);
+  const apiCallPagniateSize = _.isEmpty(config_paginate_size) ? 100 : Number(config_paginate_size);
 
-  const allWorkflowRuns = await octokit.paginate(
-    octokit.rest.actions.listWorkflowRunsForRepo.endpoint.merge({
+  const artifacts: Artifact[] = await octokit.paginate(
+    octokit.rest.actions.listArtifactsForRepo.endpoint.merge({
       owner: ownerName,
       repo: repoName,
       per_page: apiCallPagniateSize
     }),
     ({ data }) =>
-      data.map((run: any) => ({
-        runId: run.id as number,
-        runName: run.display_title as string,
-        workflowId: run.workflow_id as number,
-        workflowName: run.name as string,
-        status: run.status as string,
-        conclusion: run.conclusion as string
+      (data as any[]).map<Artifact>((artifact: any) => ({
+        id: artifact.id,
+        name: artifact.name,
+        size: artifact.size_in_bytes,
+        runId: artifact.workflow_run.id,
+        createdAt: new Date(artifact.created_at)
       }))
   );
-
-  Object.entries(_.groupBy(allWorkflowRuns, (run) => run.workflowId)).forEach(([workflowId, runs]) => {
-    core.info(
-      `Workflow '${runs.find((run) => run.workflowId === Number(workflowId))?.workflowName}' has ${
-        runs.length
-      } runs: ['${runs.map((run) => `RunId_${run.runId}-RunName_${run.runName.replaceAll(/\s+/g, '.')}`).join(', ')}']`
-    );
-  });
-
-  const client = new DefaultArtifactClient();
-  const artifacts = new Array<Artifact & { runId: number; workflowId: number }>();
-
-  for (const workflowRun of allWorkflowRuns) {
-    const allArtifactsInRun = await client
-      .listArtifacts({
-        findBy: {
-          token: token,
-          workflowRunId: workflowRun.runId,
-          repositoryName: repoName,
-          repositoryOwner: ownerName
-        }
-      })
-      .catch<ListArtifactsResponse>((err) => {
-        core.warning(
-          `Failed to list artifacts for workflow run: 'RunId_${
-            workflowRun.runId
-          }-RunName_${workflowRun.runName.replaceAll(/\s+/g, '.')}', this run will be ignored, error: ${err.message}`
-        );
-
-        return undefined;
-      });
-
-    if (allArtifactsInRun) {
-      core.info(
-        `Found ${allArtifactsInRun.artifacts.length} artifacts for workflow run: 'RunId_${
-          workflowRun.runId
-        }-RunName_${workflowRun.runName.replaceAll(/\s+/g, '.')}'`
-      );
-
-      allArtifactsInRun.artifacts.forEach((artifact) => {
-        artifacts.push({
-          ...artifact,
-          runId: workflowRun.runId,
-          workflowId: workflowRun.workflowId
-        });
-      });
-    }
-  }
 
   core.info(
     `Found ${artifacts.length} existing artifacts in total. Listing all artifacts: ${artifacts
       .map(
         (artifact) =>
-          `'WorkflowId_${artifact.workflowId}-RunId_${artifact.runId}-ArtifactId_${
-            artifact.id
-          }-ArtifactName_${artifact.name.replaceAll(/\s+/g, '.')}'`
+          `'Artifact Id: ${artifact.id} | Artifact Name: ${artifact.name.replaceAll(/\s+/g, '.')} | Artifact Size: ${bytes.format(artifact.size)}'`
       )
       .join(', ')}`
   );
 
-  const deletedArtifacts = new Array<{
-    id: number;
-    name: string;
-    size: number;
-    runId: number;
-    workflowId: number;
-  }>();
+  const deletedArtifacts = new Array<Artifact>();
 
   if (limit > 0) {
     const retrievePendingSize = async () => {
@@ -221,9 +156,7 @@ const main = async () => {
     const existingArtifactsTotalSize = _.sumBy(artifacts, (artifact) => artifact.size);
 
     if (pendingSize > limit) {
-      throw new Error(
-        `Total size of artifacts to upload exceeds the limit: ${bytes.format(pendingSize)}`
-      );
+      throw new Error(`Total size of artifacts to upload exceeds the limit: ${bytes.format(pendingSize)}`);
     }
 
     core.info(`Total size that need to be reserved: ${bytes.format(pendingSize)}`);
@@ -245,22 +178,22 @@ const main = async () => {
     );
 
     for (let index = 0, deletedSize = 0; index < sortedByDateArtifacts.length; index++) {
-      const { name, size, id, runId, workflowId } = sortedByDateArtifacts[index];
+      const art = sortedByDateArtifacts[index];
 
-      if (!_.isEmpty(name)) {
+      if (!_.isEmpty(art.name)) {
         deletedArtifacts.push({
-          id: id,
-          name: name,
-          size: size,
-          runId: runId,
-          workflowId: workflowId
+          id: art.id,
+          name: art.name,
+          size: art.size,
+          runId: art.runId,
+          createdAt: art.createdAt
         });
 
         try {
-          await client.deleteArtifact(name, {
+          await artifact.deleteArtifact(art.name, {
             findBy: {
               token: token,
-              workflowRunId: runId,
+              workflowRunId: art.runId,
               repositoryName: repoName,
               repositoryOwner: ownerName
             }
@@ -268,7 +201,7 @@ const main = async () => {
         } catch (error) {
           if (error instanceof ArtifactNotFoundError) {
             core.warning(
-              `Failed to delete artifact '${name}' within RunId '${runId}' because artifact is not found and maybe expired.`
+              `Failed to delete artifact '${art.name}' within RunId '${art.runId}' because artifact is not found and maybe expired.`
             );
             continue;
           }
@@ -277,7 +210,7 @@ const main = async () => {
         }
       }
 
-      if ((deletedSize += size) >= freeSpaceNeeded) {
+      if ((deletedSize += art.size) >= freeSpaceNeeded) {
         core.info(
           `Summary: available space after cleanup: ${bytes.format(limit - existingArtifactsTotalSize + deletedSize)}`
         );
@@ -287,21 +220,21 @@ const main = async () => {
   } else {
     core.info(`Limit is less or equal to 0, start cleanup all existing artifacts`);
 
-    for (const { name, size, id, runId, workflowId } of artifacts) {
-      if (!_.isEmpty(name)) {
+    for (const art of artifacts) {
+      if (!_.isEmpty(art.name)) {
         deletedArtifacts.push({
-          id: id,
-          name: name,
-          size: size,
-          runId: runId,
-          workflowId: workflowId
+          id: art.id,
+          name: art.name,
+          size: art.size,
+          runId: art.runId,
+          createdAt: art.createdAt
         });
 
         try {
-          await client.deleteArtifact(name, {
+          await artifact.deleteArtifact(art.name, {
             findBy: {
               token: token,
-              workflowRunId: runId,
+              workflowRunId: art.runId,
               repositoryName: repoName,
               repositoryOwner: ownerName
             }
@@ -309,7 +242,7 @@ const main = async () => {
         } catch (error) {
           if (error instanceof ArtifactNotFoundError) {
             core.warning(
-              `Failed to delete artifact '${name}' within RunId '${runId}' because artifact is not found and maybe expired.`
+              `Failed to delete artifact '${art.name}' within RunId '${art.runId}' because artifact is not found and maybe expired.`
             );
             continue;
           }
@@ -326,15 +259,10 @@ const main = async () => {
 
   Object.entries(_.groupBy(deletedArtifacts, (artifact) => artifact.runId)).forEach(([runId, artifact]) => {
     core.info(
-      `Summary: ${artifact.length} artifacts deleted from workflow run 'RunId_${runId}-RunName_${allWorkflowRuns
-        .find((run) => run.runId === Number(runId))
-        ?.runName.replaceAll(/\s+/g, '.')}': [${artifact
+      `Summary: ${artifact.length} artifacts deleted from workflow run 'RunId_${runId}': [${artifact
         .map(
           (art) =>
-            `'WorkflowId_${art.workflowId}-RunId_${art.runId}-ArtifactId_${art.id}-ArtifactName_${art.name.replaceAll(
-              /\s+/g,
-              '.'
-            )}'`
+            `'Artifact Id: ${art.id} | Artifact Name: ${art.name.replaceAll(/\s+/g, '.')}' | Artifact Size: ${bytes.format(art.size)}`
         )
         .join(', ')}]`
     );

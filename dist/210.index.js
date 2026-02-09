@@ -1,7 +1,6 @@
-"use strict";
-exports.id = 210;
-exports.ids = [210];
-exports.modules = {
+export const id = 210;
+export const ids = [210];
+export const modules = {
 
 /***/ 35210:
 /***/ ((__unused_webpack___webpack_module__, __webpack_exports__, __webpack_require__) => {
@@ -242,4 +241,3 @@ throttling.triggersNotification = triggersNotification;
 /***/ })
 
 };
-;
