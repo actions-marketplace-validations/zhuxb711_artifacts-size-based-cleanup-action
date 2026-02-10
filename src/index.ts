@@ -123,7 +123,7 @@ const main = async () => {
 
       const validPaths = new Array<string>();
       const simulateAndGetCompressedSize = async (path: string, compressionLevel: number) => {
-        const zipPath = __dirname + `/size_simulate_${uuidv4()}.zip`;
+        const zipPath = import.meta.dirname + `/size_simulate_${uuidv4()}.zip`;
 
         try {
           return await fsPromise
